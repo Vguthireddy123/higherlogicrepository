@@ -1,0 +1,137 @@
+package com.italent.translator.serviceimpl;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Base64.Decoder;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import org.apache.http.HttpEntity;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.util.EntityUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import com.google.cloud.translate.v3.LocationName;
+import com.google.cloud.translate.v3.TranslateTextRequest;
+import com.google.cloud.translate.v3.TranslateTextResponse;
+import com.google.cloud.translate.v3.Translation;
+import com.google.cloud.translate.v3.TranslationServiceClient;
+import com.italent.translator.service.GoogleTranslateService;
+import com.italent.translator.utils.Constants;
+
+/**
+ * @author mimtiazu
+ *
+ */
+@Service
+
+
+public class TestServiceImple {
+
+	private static final Logger logger = LoggerFactory.getLogger(GoogleTranslateServiceImpl.class);
+	
+	private static int NoOfGoogleApiCallsPerRequest=0;
+	
+	private static int totalNoOfCharatersPerRequest=0;
+	
+	//@Autowired
+	//private KeyVaultService keyVaultService;
+	
+	@Value("${app.googleapikey}")
+	private String googleApiKey;
+	
+	//@Value("${azure.keyvault.key}")
+    //private String keyVaultKey;
+	
+	//@Value("${azure.keyvault.versionid}")
+    //private String keyVaultVersionId;
+	
+	@Value("${app.max_char_length}")
+	private int maxCharLength;
+	
+	@Value("${app.max_threadpool_size}")
+	private int maxThreadPoolSize;
+	
+	private static ConcurrentHashMap<String,String> elementMapData=new ConcurrentHashMap<>();
+	LinkedHashSet<String> list = new LinkedHashSet<String>();
+	LinkedHashMap<Element, String> lhm 
+    = new LinkedHashMap<Element, String>();
+	
+	/**
+	 * this method is to parse each HTML element and 
+	 * send to Google translate API 
+	 * 
+	 */
+	@SuppressWarnings("PMD")
+	//@Override
+	public String translateContent(String projectId, String targetLanguage, String text) throws UnsupportedEncodingException, IOException, RuntimeException{
+		
+		String html=null;
+		Document document=null;
+		ExecutorService elementExecutor = Executors.newFixedThreadPool(maxThreadPoolSize);
+		try {
+			//accessToken=this.googleAuthUtil.generateAccessToken();
+			
+			html = URLDecoder.decode(text, "UTF-8");
+			
+			document = Jsoup.parse(html,"UTF-8");
+			
+			Elements eles = document.select("*");
+			logger.info("In translate content method");
+			for (Element ele1 : eles) {
+				if (!ele1.ownText().isEmpty()) {
+				
+					if( ele1.html().length() > maxCharLength 
+			    			|| ele1.tagName().equalsIgnoreCase("code")
+			    			|| ele1.tagName().equalsIgnoreCase("script")
+			    			|| ele1.className().equalsIgnoreCase("well")
+			    			|| ele1.className().equalsIgnoreCase("message-original-button")
+			    			||ele1.className().equalsIgnoreCase("translation-section")
+			    			//|| ((ele.parents().hasClass("col-md-12 messageContentColumn")) && (ele.ownText().length() > 0))
+			    	){
+						//ignoring elements
+			    		//logger.info(" element own text element length "+ele.html());
+			    		//logger.info("element own text "+ele.ownText());
+					}else {
+					
+						list.add(ele1.html());
+						lhm.put(ele1, ele1.html());
+					} 
+				}
+			}
+			System.out.println ("###sourcearrayinput length"+list.size());
+			
+			String[] sourceArray = list.toArray(new String[0]);	
+			System.out.println ("###sourcearrayinput"+sourceArray.length);
+	
+}

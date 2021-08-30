@@ -1,0 +1,12 @@
+package com.italent.translator.service;
+
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+
+public interface TestInterface {
+	
+	String translateContent1(String projectId, String targetLanguage, String text)
+			throws RuntimeException, UnsupportedEncodingException, IOException;
+
+
+}

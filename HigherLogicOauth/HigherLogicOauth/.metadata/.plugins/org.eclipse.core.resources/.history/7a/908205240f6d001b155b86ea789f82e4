@@ -1,0 +1,31 @@
+app.refreshToken=
+app.client_id=
+app.client_secret=
+#italent-dev google api key
+#dev
+app.googleapikey=QUl6YVN5QVQxbEFvZXU4ZFVsSEhDZ19Td1BrZ0JtNXlGMFJxSFY0
+
+
+
+app.project_id=ics-language-translate
+
+#token validity time in seconds
+app.token_validity_time=300
+app.max_char_length=100000
+app.max_threadpool_size=20
+
+#Allowed origins
+app.allowed_origins=http://localhost:8443, https://italentdemo.connectedcommunity.org, https://hpe.connectedcommunity.org
+
+
+#Azure keyvault config
+azure.keyvault.key="azurename"
+azure.keyvault.versionid=1
+azure.keyvault.uri="azure/com"
+azure.client-id="123"
+azure.client-key="12"
+
+
+#Making Tomcat as HTTPS
+server.port=8443
+

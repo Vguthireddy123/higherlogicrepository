@@ -1,0 +1,451 @@
+package com.italent.translator.serviceimpl;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import org.apache.http.HttpEntity;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.util.EntityUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import com.google.cloud.translate.v3.LocationName;
+import com.google.cloud.translate.v3.TranslateTextRequest;
+import com.google.cloud.translate.v3.TranslateTextResponse;
+import com.google.cloud.translate.v3.Translation;
+import com.google.cloud.translate.v3.TranslationServiceClient;
+import com.italent.translator.service.GoogleTranslateService;
+import com.italent.translator.utils.Constants;
+
+/**
+ * @author mimtiazu
+ *
+ */
+@Service
+public class GoogleTranslateServiceImpl implements GoogleTranslateService{
+
+	private static final Logger logger = LoggerFactory.getLogger(GoogleTranslateServiceImpl.class);
+	
+	private static int NoOfGoogleApiCallsPerRequest=0;
+	
+	private static int totalNoOfCharatersPerRequest=0;
+	
+	//@Autowired
+	//private KeyVaultService keyVaultService;
+	
+	@Value("${app.googleapikey}")
+	private String googleApiKey;
+	
+	//@Value("${azure.keyvault.key}")
+    //private String keyVaultKey;
+	
+	//@Value("${azure.keyvault.versionid}")
+    //private String keyVaultVersionId;
+	
+	@Value("${app.max_char_length}")
+	private int maxCharLength;
+	
+	@Value("${app.max_threadpool_size}")
+	private int maxThreadPoolSize;
+	
+	private static ConcurrentHashMap<String,String> elementMapData=new ConcurrentHashMap<>();
+	LinkedHashMap<String, String> map = new LinkedHashMap<String, String>();
+	/**
+	 * this method is to parse each HTML element and 
+	 * send to Google translate API 
+	 * 
+	 */
+	@SuppressWarnings("PMD")
+	//@Override
+	public String translateContent(String projectId, String targetLanguage, String text) throws UnsupportedEncodingException, IOException, RuntimeException{
+		
+		String html=null;
+		Document document=null;
+		ExecutorService elementExecutor = Executors.newFixedThreadPool(maxThreadPoolSize);
+		try {
+			//accessToken=this.googleAuthUtil.generateAccessToken();
+			
+			
+			html = URLDecoder.decode(text, "UTF-8");
+			document = Jsoup.parse(html,"UTF-8");
+			
+			String translateHtml=null;
+			
+			//document.select("script").remove();
+			Elements eles = document.select("*");
+
+			 ExecutorService elementExecutor = Executors.newFixedThreadPool(20);
+			
+			logger.info("In translate content method");
+			for (Element ele : eles) {
+				if (!ele.ownText().isEmpty() && ele.html() != null) {
+				
+						if( ele.html().length() > maxCharLength 
+				    			||ele.tagName().equalsIgnoreCase("code")
+				    			||ele.tagName().equalsIgnoreCase("script")
+				    			||ele.tagName().equalsIgnoreCase("HtmlContent")
+				    			|| ele.className().equalsIgnoreCase("well")
+				    			||ele.className().equalsIgnoreCase("message-original-button")
+				    			||ele.className().equalsIgnoreCase("translation-section")
+				    			||ele.className().equalsIgnoreCase("translation-in")
+				    			
+				    			//|| ((ele.parents().hasClass("col-md-12 messageContentColumn")) && (ele.ownText().length() > 0))
+				    	){
+							//ignoring elements
+				    		//logger.info(" element own text element length "+ele.html());
+				    		//logger.info("element own text "+ele.ownText());
+						} else {
+						       map.put(ele.html(), ele.html());
+						 } 
+				}
+			}
+				logger.info("map length"+map.size());
+				//logger.info("map content"+map.toString());
+				
+				String[] sourceArray = map.values().toArray(new String[0]);
+				
+			//logger.info("hai"+sourceArray);
+			//LinkedHashMap<String, String> translateMapArray = new LinkedHashMap<String, String>();
+		    //JSONObject result=  postV2Basic(targetLanguage,sourceArray,googleApiKey);
+			//logger.info("$#@!"+result);
+		/*	JSONArray resultjson= result.getJSONObject("data").getJSONArray("translations");
+				
+				int i=0;
+		  		for (Entry<String, String> entry : map.entrySet()) {
+		  			if(resultjson.getJSONObject(i).getString("translatedText") != null && entry.getValue() != null) {
+		          map.replace(entry.getKey(), resultjson.getJSONObject(i).getString("translatedText"));
+		         // logger.info("translatetext"+result.getJSONObject(i).getString("translatedText"));
+		          i++;
+	  			}
+		  		}*/
+	        int i=0;
+			for (Entry<String, String> entry : map.entrySet()) {
+	  			
+	          map.replace(entry.getValue(), sourceArray[i]);
+	          //logger.info("map1"+ sourceArray[i]);
+	          i++;
+	  			
+			}
+			 elementExecutor.execute((Runnable)() -> {
+		 		 for (Element ele : eles) {
+						try {
+						
+						    translateElement(ele,map);
+						
+						 
+					}catch(Exception e) {
+						logger.info("Got exception in translate content1 method: "+e);
+						logger.error("Got exception :"+ e);
+						throw e;
+					}
+				}
+			 });
+			 
+	    	logger.info("Fininshed for all the threads");
+	    	logger.info("Total calls per request: "+NoOfGoogleApiCallsPerRequest);
+	    	logger.info("Total API characters count per request: "+totalNoOfCharatersPerRequest);
+	    	
+			 translateHtml=document.getElementsByTag("body").html();
+			
+			 return translateHtml;	
+			
+		} catch (UnsupportedEncodingException e) {
+			elementExecutor.shutdown();
+			logger.error("Invalid url: %s", text);
+			throw e;
+		} catch (Exception e) {
+			elementExecutor.shutdown();
+			logger.info("Translation failed "+e);
+			throw new RuntimeException(e);
+		}finally {
+			map.clear();
+			
+			
+		}
+	}
+
+	
+	
+	 //@SuppressWarnings("PMD")
+	 public Element translateElement(Element ele,LinkedHashMap<String, String> translateMapArray) {
+			if (!ele.ownText().isEmpty() && ele.html() != null) {
+					if(translateMapArray.containsKey(ele.html())) {
+						        if(ele.html() == null) {
+						        	ele.html(ele.outerHtml());
+						        }else {
+								logger.info("translate :"+ele);
+								logger.info("value"+translateMapArray.get(ele.html()));
+					           ele.html(translateMapArray.get(ele.html()));
+						        }
+						
+						  }
+					
+			}
+			return ele;	
+	 }
+	 // @SuppressWarnings("PMD")
+/*	public Element translateElement(Element ele, String projectId,String targetLanguage,String key) throws RuntimeException {
+		
+		 if (!ele.ownText().isEmpty()) {
+			 String translatetext=null;
+			
+			    try {
+			     //logger.info("parent element: "+ele.parent().className());
+			    	//|| ele.tagName().equalsIgnoreCase("code")
+			    	if( ele.html().length() > maxCharLength 
+			    			|| ele.tagName().equalsIgnoreCase("code")
+			    			|| ele.tagName().equalsIgnoreCase("script")
+			    			|| ele.className().equalsIgnoreCase("well")
+			    			|| ele.className().equalsIgnoreCase("message-original-button")
+			    			//|| ((ele.parents().hasClass("col-md-12 messageContentColumn")) && (ele.ownText().length() > 0))
+			    	){
+			    		//ignoring elements
+			    		//logger.info(" element own text element length "+ele.html());
+			    		//logger.info("element own text "+ele.ownText());
+			    	}else 
+			    	{
+			    		String sourceText = ele.html();
+			    		
+			    		boolean numeric = false;
+
+			    	    numeric = sourceText.matches("-?\\d+(\\.\\d+)?");
+
+			    	    if(numeric) {
+			    	        //logger.info("Ignoring number "+sourceText);
+			    	    } else {
+			    	    	if(elementMapData.containsKey(sourceText)) {
+			    	    		//checking if element already exists and translated
+			    	    		ele.html(elementMapData.get(sourceText));
+			    	    		
+			    	    	}else {
+				    	    	totalNoOfCharatersPerRequest = totalNoOfCharatersPerRequest + ele.html().length();
+				    	    	//logger.info("element is: "+ele.html());
+				    	    	translatetext = postV2Basic(targetLanguage,sourceText,key);
+				    	    	//ele.html(StringEscapeUtils.unescapeHtml4(translatetext));
+				    	    	ele.html(translatetext);
+				    	    	//adding new elements in the Map
+				    	    	elementMapData.put(sourceText, translatetext); 
+			    	    	}
+			    	    	return ele;
+			    	    }
+					    
+			    	}
+		         
+			    }catch (Exception e) {
+			    	logger.error("Got exception in translating element: "+e);
+			    	throw new RuntimeException(e);
+			    }
+		     
+		 }
+		 return ele;
+	}*/
+	
+	public String translateText(String projectId, String targetLanguage, String text,String accessToken)
+		      throws IOException,RuntimeException {
+		    String translatecontent=null;
+		    try (TranslationServiceClient client = TranslationServiceClient.create()) {
+		     
+		      LocationName parent = LocationName.of(projectId, "us-central1");
+	
+		      TranslateTextRequest request =
+		          TranslateTextRequest.newBuilder()
+		              .setParent(parent.toString())
+		              .setMimeType("text/html")
+		              .setTargetLanguageCode(targetLanguage)
+		              .addContents(text)
+		              .build();
+	
+		      TranslateTextResponse response = client.translateText(request);
+		     
+		      // Display the translation for each input text provided
+		      for (Translation translation : response.getTranslationsList()) {
+		    	  translatecontent=translation.getTranslatedText();
+		      }
+		    }catch(Exception e) {
+		    	logger.error("Got exception while translating text: "+e);
+		    	throw new RuntimeException(e);
+		    }
+		    return translatecontent;
+	}
+	
+	
+	/**
+	 * Post v3 advanced call to translate html content
+	 * @param projectId
+	 * @param targetLanguage
+	 * @param text
+	 * @param accessToken
+	 * @return
+	 * @throws URISyntaxException
+	 * @throws IOException 
+	 */
+	public String postV3Advanced(String projectId, String targetLanguage, String text,String accessToken) throws URISyntaxException, IOException
+	{    String translatecontent=null;
+		 JSONObject request = new JSONObject();
+		 request.put("contents", text);
+		 request.put("targetLanguageCode", targetLanguage);
+		 CloseableHttpClient client = HttpClients.createDefault();
+	      CloseableHttpResponse response = null;
+	      String path="https://translation.googleapis.com/v3/projects/"+projectId+"/locations/us-central1:translateText";
+	      try {
+	        	
+	            HttpPost httpPost = new HttpPost(path);
+	            URI uri = new URIBuilder(httpPost.getURI()).build();
+	            httpPost.setURI(uri);
+	            httpPost.setHeader("Authorization", "Bearer "+ accessToken);
+	            StringEntity entity = new StringEntity(request.toString(),
+	                    ContentType.APPLICATION_JSON);          
+	            httpPost.setEntity(entity);
+	            response = client.execute(httpPost);
+	            int statusCode = response.getStatusLine().getStatusCode();
+	               if (statusCode != HttpStatus.OK.value()) {
+	                   throw new RuntimeException("Failed with HTTP error code : " + statusCode);
+	               }
+	              HttpEntity httpEntity = response.getEntity();
+	              String result = EntityUtils.toString(httpEntity);
+	              JSONObject userJson = new JSONObject(result);
+	              JSONArray array = userJson.getJSONArray("translations");
+				  if(array.getJSONObject(0).has("translatedText")) {
+					  translatecontent=array.getJSONObject(0).getString("translatedText");
+					  logger.error("insideservice methode"+translatecontent);
+				  }else {
+					 logger.error("Got exception :"+text);
+				  }
+	              
+	      }catch (IOException ex) {
+	    	  logger.error("Got Exception while making v3 call: "+ex);
+	      }finally{
+       	   if (client != null) {
+              client.close();
+           }
+           if (response != null) {
+               response.close();
+
+           }
+       }
+	      return translatecontent;
+	 }
+	 public String detect( String text,String apikey) throws URISyntaxException, ClientProtocolException, IOException
+	 {
+		   CloseableHttpClient httpclient = HttpClients.createDefault();
+		   CloseableHttpResponse response = null;
+		   String language="";
+		   try {
+	         HttpPost httpPost = new HttpPost("https://translation.googleapis.com/language/translate/v2/detect");
+	            
+	         	List<NameValuePair> nameValuePairs = new ArrayList<>(2);
+	            nameValuePairs.add(new BasicNameValuePair("q",text));
+	            nameValuePairs.add(new BasicNameValuePair("key",apikey));
+	            httpPost.setEntity(new UrlEncodedFormEntity(nameValuePairs)); 
+ 	            response = httpclient.execute(httpPost);
+	            HttpEntity resEntity = response.getEntity();
+	           
+	            String result = EntityUtils.toString(resEntity);
+	            JSONObject detection = new JSONObject(result);
+	            language=detection.getJSONObject("data").getJSONArray("detections").getJSONArray(0).getJSONObject(0).getString("language");
+		   }
+		   catch (IOException ex) {
+			   logger.info("Got exception while translating text: "+ex);   
+           }finally{
+        	   if (httpclient != null) {
+                   httpclient.close();
+               }
+               if (response != null) {
+                   response.close();
+
+               }
+           }
+	   	 return language;
+	        
+	}
+	/**
+	 * this method will make v2 basic google translate API for translating html element
+	 * @param targetLanguage
+	 * @param sourceArray
+	 * @param apiKey
+	 * @return
+	 * @throws URISyntaxException
+	 * @throws ClientProtocolException
+	 * @throws IOException
+	 */
+	public JSONObject postV2Basic(String targetLanguage, String[] sourceArray,String apiKey) throws URISyntaxException, ClientProtocolException, IOException, RuntimeException
+	{   JSONObject resultJson=null;
+		//System.out.println("%%%test"+sourceArray);
+		CloseableHttpClient httpclient = HttpClients.createDefault();
+		CloseableHttpResponse response = null;
+		String url=null;
+		String translatedText=null;
+		String result=null;
+		int responseCode=0;
+		/*Decoder decoder = Base64.getMimeDecoder();
+		byte[] decodedBytes = decoder.decode(apiKey);
+		String googleBasicKey=new String(decodedBytes);*/
+	    try {
+	    	url=Constants.GOOGLE_V2_API+"?key="+apiKey+"&model=nmt";
+	        HttpPost httpPost = new HttpPost(url);
+	        JSONObject obj=new JSONObject();
+	        obj.put("q",sourceArray);
+	        obj.put("target", targetLanguage);
+	        StringEntity entity = new StringEntity(obj.toString());
+	        httpPost.setEntity(entity);
+	       
+	        response = httpclient.execute(httpPost);
+	        HttpEntity resEntity = response.getEntity();
+	        result = EntityUtils.toString(resEntity);
+	        responseCode=response.getStatusLine().getStatusCode();
+	        if(responseCode == 200) {
+	    
+		         resultJson = new JSONObject(result);
+		     //   translatedText = resultJson.getJSONObject("data").getJSONArray("translations").getJSONObject(0).getString("translatedText");
+		        
+		        NoOfGoogleApiCallsPerRequest++;
+	        }else {
+	        	logger.info("Got error for element : "+sourceArray);
+	        	logger.error("Google tranlate API exception with code: "+responseCode+" and response: "+result);
+	        }
+	         
+	    }catch (Exception ex) {
+		   logger.error("Got exception while calling Google API v2 call: "+ex);
+ 		   throw ex;
+         }finally{
+    	   if (httpclient != null) {
+               httpclient.close();
+           }
+           if (response != null) {
+              response.close();
+
+           }
+           
+       }
+	    return resultJson;
+	 }
+	 
+}
