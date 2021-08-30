@@ -1,2 +1,2 @@
 # higherlogicrepository
-higherlogic oauth
+higherlogic oauth discription
