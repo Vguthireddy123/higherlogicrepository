@@ -1,5 +1,0 @@
-package com.italent.translator.service;
-
-public interface TestInterface {
-
-}
